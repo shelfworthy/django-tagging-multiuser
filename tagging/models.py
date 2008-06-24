@@ -470,9 +470,6 @@ class Tag(models.Model):
         verbose_name = _('tag')
         verbose_name_plural = _('tags')
 
-    class Admin:
-        pass
-
     def __unicode__(self):
         return self.name
 
@@ -492,9 +489,6 @@ class TaggedItem(models.Model):
         unique_together = (('tag', 'content_type', 'object_id'),)
         verbose_name = _('tagged item')
         verbose_name_plural = _('tagged items')
-
-    class Admin:
-        pass
 
     def __unicode__(self):
         return u'%s [%s]' % (self.object, self.tag)
