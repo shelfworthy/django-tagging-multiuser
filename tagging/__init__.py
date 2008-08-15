@@ -1,5 +1,3 @@
-import tagging.admin
-
 from django.utils.translation import ugettext as _
 
 from tagging.managers import ModelTaggedItemManager, TagDescriptor
