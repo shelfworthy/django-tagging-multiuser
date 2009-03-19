@@ -7,6 +7,7 @@ try:
 except NameError:
     from sets import Set as set
 
+from django.conf import settings
 from django.contrib.contenttypes import generic
 from django.contrib.contenttypes.models import ContentType
 from django.db import connection, models
@@ -17,6 +18,12 @@ from tagging import settings
 from tagging.utils import calculate_cloud, get_tag_list, get_queryset_and_model, parse_tag_input
 from tagging.utils import LOGARITHMIC
 
+if settings.OWNER_MODEL:
+    OWNER_MODEL = settings.OWNER_MODEL
+else:
+    from django.contrib.auth.models import User
+    OWNER_MODEL = User
+
 qn = connection.ops.quote_name
 
 ############
@@ -24,12 +31,13 @@ qn = connection.ops.quote_name
 ############
 
 class TagManager(models.Manager):
-    def update_tags(self, obj, tag_names):
+    def update_tags(self, obj, tag_names, owner):
         """
         Update tags associated with an object.
         """
         ctype = ContentType.objects.get_for_model(obj)
         current_tags = list(self.filter(items__content_type__pk=ctype.pk,
+                                        items__owners=owner,
                                         items__object_id=obj.pk))
         updated_tag_names = parse_tag_input(tag_names)
         if settings.FORCE_LOWERCASE_TAGS:
@@ -39,17 +47,28 @@ class TagManager(models.Manager):
         tags_for_removal = [tag for tag in current_tags \
                             if tag.name not in updated_tag_names]
         if len(tags_for_removal):
-            TaggedItem._default_manager.filter(content_type__pk=ctype.pk,
-                                               object_id=obj.pk,
-                                               tag__in=tags_for_removal).delete()
+            items = TaggedItem._default_manager.filter(content_type__pk=ctype.pk,
+                                                       object_id=obj.pk,
+                                                       tag__in=tags_for_removal)
+            for item in items:
+                # remove the owner from the list
+                item.owners.remove(owner)
+                # if no one is using this tag anymore, remove it
+                if item.owners.all().count():
+                    item.save()
+                else:
+                    item.delete()
+
         # Add new tags
         current_tag_names = [tag.name for tag in current_tags]
         for tag_name in updated_tag_names:
             if tag_name not in current_tag_names:
                 tag, created = self.get_or_create(name=tag_name)
-                TaggedItem._default_manager.create(tag=tag, object=obj)
+                t_item, created = TaggedItem._default_manager.get_or_create(tag=tag, object=obj)
+                t_item.owners.add(owner)
+                t_item.save()
 
-    def add_tag(self, obj, tag_name):
+    def add_tag(self, obj, tag_name, owner):
         """
         Associates the given object with a tag.
         """
@@ -63,17 +82,31 @@ class TagManager(models.Manager):
             tag_name = tag_name.lower()
         tag, created = self.get_or_create(name=tag_name)
         ctype = ContentType.objects.get_for_model(obj)
-        TaggedItem._default_manager.get_or_create(
-            tag=tag, content_type=ctype, object_id=obj.pk)
+        t_item, created = TaggedItem._default_manager.get_or_create(tag=tag, content_type=ctype, object_id=obj.pk)
+        t_item.owners.add(owner)
+        t_item.save()
+
+    def get_for_object_owner(self, obj, owner):
+        """
+        Create a queryset matching all tags associated with the given
+        object and owner.
+        """
+        ctype = ContentType.objects.get_for_model(obj)
+        return self.filter(items__content_type__pk=ctype.pk,
+                           items__owners=owner,
+                           items__object_id=obj.pk)
 
     def get_for_object(self, obj):
         """
-        Create a queryset matching all tags associated with the given
+        Create a queryset matching the popular tags associated with the given
         object.
         """
         ctype = ContentType.objects.get_for_model(obj)
         return self.filter(items__content_type__pk=ctype.pk,
-                           items__object_id=obj.pk)
+                           items__object_id=obj.pk,
+                           items__popular=True)
+
+    ####### STOPPED HERE ###########
 
     def _get_usage(self, model, counts=False, min_count=None, extra_joins=None, extra_criteria=None, params=None):
         """
@@ -461,20 +494,30 @@ class Tag(models.Model):
 
 class TaggedItem(models.Model):
     """
-    Holds the relationship between a tag and the item being tagged.
+    Holds the relationship between a tag, the item being tagged and the user doing the tagging.
     """
+    owners       = models.ManyToManyField(OWNER_MODEL)
     tag          = models.ForeignKey(Tag, verbose_name=_('tag'), related_name='items')
     content_type = models.ForeignKey(ContentType, verbose_name=_('content type'))
     object_id    = models.PositiveIntegerField(_('object id'), db_index=True)
     object       = generic.GenericForeignKey('content_type', 'object_id')
 
+    popular      = models.BooleanField(default=False)
+
     objects = TaggedItemManager()
 
     class Meta:
         # Enforce unique tag association per object
-        unique_together = (('tag', 'content_type', 'object_id'),)
+        unique_together = (('tag', 'content_type', 'object_id', 'owner'),)
         verbose_name = _('tagged item')
         verbose_name_plural = _('tagged items')
 
     def __unicode__(self):
         return u'%s [%s]' % (self.object, self.tag)
+
+    def save(self, *args, **kwargs):
+        if self.owners.count() > 5:
+            self.popular = True
+        else:
+            self.popular = False
+        super(TaggedItem, self).save(*args, **kwargs)
