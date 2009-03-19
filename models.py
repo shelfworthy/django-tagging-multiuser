@@ -473,7 +473,7 @@ class TaggedItemManager(models.Manager):
             return []
 
 ##########
-# Models #
+# Models # (DONE)
 ##########
 
 class Tag(models.Model):
