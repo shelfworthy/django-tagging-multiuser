@@ -75,9 +75,10 @@ class TagField(CharField):
         """
         Save tags back to the database
         """
+        from django.contrib.auth.models import User
         tags = self._get_instance_tag_cache(kwargs['instance'])
         if tags is not None:
-            Tag.objects.update_tags(kwargs['instance'], tags)
+            Tag.objects.update_tags(kwargs['instance'], tags, User.objects.all()[0])
 
     def __delete__(self, instance):
         """

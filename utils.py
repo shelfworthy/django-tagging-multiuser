@@ -261,3 +261,14 @@ def calculate_cloud(tags, steps=4, distribution=LOGARITHMIC):
                     tag.font_size = i + 1
                     font_set = True
     return tags
+
+
+def unique_from_iter(iter):
+    
+    known_stack = []
+
+    for i in iter:
+        if i not in known_stack:
+            known_stack.append(i)
+            yield i
+

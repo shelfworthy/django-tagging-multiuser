@@ -1,6 +1,6 @@
 from django.db import models
 
-from tagging.fields import TagField
+from tagging.managers import ModelTaggedItemManager, ModelTagManager
 
 class Perch(models.Model):
     size = models.IntegerField()
@@ -9,6 +9,9 @@ class Perch(models.Model):
 class Parrot(models.Model):
     state = models.CharField(max_length=50)
     perch = models.ForeignKey(Perch, null=True)
+
+    objects = ModelTaggedItemManager()
+    tags_objects = ModelTagManager()
 
     def __unicode__(self):
         return self.state
@@ -34,5 +37,3 @@ class Article(models.Model):
     class Meta:
         ordering = ['name']
 
-class FormTest(models.Model):
-    tags = TagField('Test', help_text='Test')
