@@ -54,6 +54,11 @@ class TagManager(models.Manager):
             items = TaggedItem._default_manager.filter(content_type__pk=ctype.pk,
                                                        object_id=obj.pk,
                                                        tag__in=tags_for_removal)
+            for tag in tags_for_removal:
+                if TaggedItem._default_manager.filter(owners=owner, content_type=ctype, object_id=tag.pk).count() <= 1:
+                    tag.owners.remove(owner)
+                    tag.save()
+
             for item in items:
                 # remove the owner from the list
                 item.owners.remove(owner)
@@ -68,6 +73,11 @@ class TagManager(models.Manager):
         for tag_name in updated_tag_names:
             if tag_name not in current_tag_names:
                 tag, created = self.get_or_create(name=tag_name)
+
+                if owner not in tag.owners.all():
+                    tag.owners.add(owner)
+                    tag.save()
+
                 t_item, created = TaggedItem._default_manager.get_or_create(tag=tag, object_id=obj.pk, content_type=ctype)
                 t_item.owners.add(owner)
                 t_item.save()
@@ -86,6 +96,11 @@ class TagManager(models.Manager):
         if settings.FORCE_LOWERCASE_TAGS:
             tag_name = tag_name.lower()
         tag, created = self.get_or_create(name=tag_name)
+        
+        if owner not in tag.owners.all():
+            tag.owners.add(owner)
+            tag.save()
+
         ctype = ContentType.objects.get_for_model(obj)
         t_item, created = TaggedItem._default_manager.get_or_create(tag=tag, content_type=ctype, object_id=obj.pk)
         t_item.owners.add(owner)
@@ -96,44 +111,46 @@ class TagManager(models.Manager):
         Create a queryset matching all tags associated with the given
         object and owner.
         """
-        return self.get_for_object(obj).filter(items__owners=owner)
+        return self.get_for_object(obj, owner, items__owners=owner)
  
-    def get_for_object(self, obj, owner_mark=None):
+    def get_for_model(self, model, owner_mark=None, *filter_args, **filter_kwargs):
         """
         Create a queryset matching the popular tags associated with the given
         object.
         """
+
+        ctype = ContentType.objects.get_for_model(model)
 
         extra_select = {'popular': 'tagging_taggeditem.popular'} 
         select_params = []
 
         if owner_mark is not None:
             extra_select['is_own'] = '(SELECT COUNT(*) > 0 from tagging_taggeditem_owners WHERE taggeditem_id = tagging_taggeditem.id AND user_id = %s)'
-            select_params.append(qn(owner_mark.pk))
+            select_params.append(owner_mark.pk)
+        
+        filter_kwargs['items__content_type'] = ctype
 
-        ctype = ContentType.objects.get_for_model(obj)
-        return self.select_related().filter(items__content_type__pk=ctype.pk,
-                items__object_id=obj.pk).extra(select=extra_select, select_params=select_params)
+        return self.select_related().filter(*filter_args, 
+                **filter_kwargs).extra(select=extra_select, select_params=select_params).distinct()
+                        # distinct is fail-safe hack for prevent wrong result when django creates 
+                        # additional join when you try to make another .filter(items__ ... ) call
+
+    def get_for_object(self, obj, owner_mark=None, *filter_args, **filter_kwargs):
+
+        filter_kwargs['items__object_id'] = obj.pk
+        
+        return self.get_for_model(obj, owner_mark, *filter_args, **filter_kwargs)
 
     def get_for_owner(self, owner):
 
         return self.filter(items__owners=owner).distinct('pk')
+
+
     
 
 class TaggedItemManager(models.Manager):
     """
-    FIXME There's currently no way to get the ``GROUP BY`` and ``HAVING``
-          SQL clauses required by many of this manager's methods into
-          Django's ORM.
-
-          For now, we manually execute a query to retrieve the PKs of
-          objects we're interested in, then use the ORM's ``__in``
-          lookup to return a ``QuerySet``.
-
-          Now that the queryset-refactor branch is in the trunk, this can be
-          tidied up significantly.
     """
-
 
     def _get_matching_ids(self, model, tags, filter_function=None):
         
@@ -185,7 +202,7 @@ class TaggedItemManager(models.Manager):
 
 
 ##########
-# Models # (DONE)
+# Models # 
 ##########
 
 class Tag(models.Model):
@@ -193,7 +210,7 @@ class Tag(models.Model):
     A tag.
     """
     name = models.CharField(_('name'), max_length=50, unique=True, db_index=True)
-    
+    owners       = models.ManyToManyField(OWNER_MODEL)
     objects = TagManager()
 
     class Meta:
@@ -214,7 +231,7 @@ class TaggedItem(models.Model):
     object_id    = models.PositiveIntegerField(_('object id'), db_index=True)
     object       = generic.GenericForeignKey('content_type', 'object_id')
     popular      = models.BooleanField(_('popular'))
-    object_id    = models.PositiveIntegerField(_('owners count'), db_index=True)
+    object_id    = models.PositiveIntegerField(_('object id'), db_index=True)
 
     objects = TaggedItemManager()
 
