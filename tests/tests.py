@@ -169,9 +169,9 @@ AttributeError: Multiple tags were given: "one two".
 >>> Tag.objects.get_for_object(dead)
 [<Tag: zip>]
 
->>> Tag.objects.update_tags(alive, 'bar ololo xxx zip', u2)
+>>> Tag.objects.update_tags(alive, 'ololo xxx zip', u2)
 >>> Tag.objects.get_for_owner(u2)
-[<Tag: bar>, <Tag: ololo>, <Tag: xxx>, <Tag: zip>]
+[<Tag: ololo>, <Tag: xxx>, <Tag: zip>]
 
 ################
 # Popular Tags #
@@ -181,12 +181,33 @@ AttributeError: Multiple tags were given: "one two".
 >>> TaggedItem.objects.filter(popular=True)
 []
 
->>> Tag.objects.update_tags(alive, 'bar zip', u1)
->>> Tag.objects.update_tags(alive, 'bar zip', u3)
->>> Tag.objects.update_tags(alive, 'bar zip', u4)
+>>> Tag.objects.update_tags(alive, 'bar zip rar', u1)
+>>> Tag.objects.update_tags(alive, 'bar zip rar', u3)
+>>> Tag.objects.update_tags(alive, 'bar zip zip2 rar', u4)
 
->>> [t for t in Tag.objects.get_for_object(alive) if t.popular == True]
-[<Tag: bar>, <Tag: zip>]
+>>> Tag.objects.update_tags(dead, 'bar2 zip2 rar2 xxxx', u1)
+>>> Tag.objects.update_tags(dead, 'bar2 zip2 rar2 zip', u3)
+>>> Tag.objects.update_tags(dead, 'bar2 zip2 rar2', u4)
+
+>>> [t for t in Tag.objects.get_for_object(alive) if t.popular]
+[<Tag: bar>, <Tag: rar>, <Tag: zip>]
+
+>>> Tag.objects.get_for_object(alive, None, items__popular=True)
+[<Tag: bar>, <Tag: rar>, <Tag: zip>]
+
+# <Tag: zip> should appears here
+>>> Tag.objects.get_for_object(dead).filter(items__popular=True)
+[<Tag: bar2>, <Tag: rar2>, <Tag: zip>, <Tag: zip2>]
+
+# <Tag: zip> should NOT appears here
+>>> Tag.objects.get_for_object(dead, None, items__popular=True)
+[<Tag: bar2>, <Tag: rar2>, <Tag: zip2>]
+
+>>> Tag.objects.get_for_object(alive).filter(Q(items__popular=True) | Q(owners=u2))
+[<Tag: bar>, <Tag: ololo>, <Tag: rar>, <Tag: xxx>, <Tag: zip>, <Tag: zip2>]
+
+>>> Tag.objects.get_for_object(alive, u2, Q(items__popular=True) | Q(owners=u2))
+[<Tag: bar>, <Tag: ololo>, <Tag: rar>, <Tag: xxx>, <Tag: zip>]
 
 ###############
 # TaggedItems #
@@ -197,7 +218,7 @@ AttributeError: Multiple tags were given: "one two".
 [<Parrot: alive>, <Parrot: dead>]
 
 # by popular with any 
->>> Parrot.objects.with_any(Tag.objects.filter(name__in=('bar', 'zip')), lambda i: i.popular==True)
+>>> Parrot.objects.with_any(Tag.objects.filter(name__in=('bar', 'zip')), lambda i: i.popular)
 [<Parrot: alive>]
 
 # simple with all
@@ -205,7 +226,9 @@ AttributeError: Multiple tags were given: "one two".
 >>> Parrot.objects.with_all(Tag.objects.filter(name__in=('bar', 'zip')))
 [<Parrot: alive>, <Parrot: dead>]
 
->>> Parrot.objects.with_all(Tag.objects.filter(name__in=('bar', 'zip')), lambda i: i.popular==True)
+>>> Parrot.objects.with_all(Tag.objects.filter(name__in=('bar', 'zip')), lambda i: i.popular)
 [<Parrot: alive>]
 
 """
+
+
