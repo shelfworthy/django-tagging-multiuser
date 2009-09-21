@@ -9,7 +9,8 @@ from tagging import settings
 from tagging.models import Tag
 from tagging.utils import edit_string_for_tags
 
-class TagField(CharField):
+
+class TagFieldOld(CharField):
     """
     A "special" character field that actually works as a relationship to tags
     "under the hood". This exposes a space-separated string of tags, but does
